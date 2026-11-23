@@ -1,8 +1,8 @@
 name: Build ThroneCore AAR
 description: >-
   Builds app/libs/ThroneCore.aar and generates app/src/main/assets/schema/sing-box.json (with the Android build tags)
-  from throneproj/Throne at the THRONE_CORE_REF pinned in nb4a.properties. Both are cached on the resolved commit and
-  the core build script.
+  from the latest default-branch commit of throneproj/Throne, with the repository-owned Android patches applied.
+  Both are cached on the resolved commit and the patched core build script.
 runs:
   using: composite
   steps:
@@ -10,18 +10,25 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        REF=$(sed -n 's/^THRONE_CORE_REF=//p' nb4a.properties | tr -d '\r[:space:]')
-        test -n "$REF"
         THRONE_DIR="$(dirname "$GITHUB_WORKSPACE")/Throne"
         rm -rf "$THRONE_DIR"
         git init -q "$THRONE_DIR"
         git -C "$THRONE_DIR" remote add origin https://github.com/throneproj/Throne
-        git -C "$THRONE_DIR" fetch -q --depth 1 origin "$REF"
+        REMOTE_HEAD="$(git -C "$THRONE_DIR" ls-remote --symref origin HEAD)"
+        REMOTE_REF="$(printf '%s\n' "$REMOTE_HEAD" | awk '$1 == "ref:" && $3 == "HEAD" { print $2 }')"
+        [[ "$REMOTE_REF" == refs/heads/* ]] || { echo "::error::Could not resolve Throne default branch"; exit 1; }
+        git -C "$THRONE_DIR" fetch -q --depth 1 origin "$REMOTE_REF"
         git -C "$THRONE_DIR" checkout -q --detach FETCH_HEAD
+        THRONE_CORE_SHA="$(git -C "$THRONE_DIR" rev-parse HEAD)"
+        echo "Building latest Throne default-branch commit: $THRONE_CORE_SHA ($REMOTE_REF)"
+        git -C "$THRONE_DIR" apply "$GITHUB_WORKSPACE/buildScript/patches/throne-android-with-tailscale.patch"
+        grep -q '^THRONE_CORE_REF=' "$GITHUB_WORKSPACE/nb4a.properties" \
+          || { echo "::error::THRONE_CORE_REF is missing from nb4a.properties"; exit 1; }
+        sed -i "s/^THRONE_CORE_REF=.*/THRONE_CORE_REF=$THRONE_CORE_SHA/" "$GITHUB_WORKSPACE/nb4a.properties"
         {
-          echo "THRONE_CORE_REF=$REF"
+          echo "THRONE_CORE_REF=$THRONE_CORE_SHA"
           echo "THRONE_DIR=$THRONE_DIR"
-          echo "THRONE_CORE_SHA=$(git -C "$THRONE_DIR" rev-parse HEAD)"
+          echo "THRONE_CORE_SHA=$THRONE_CORE_SHA"
           echo "THRONE_CORE_SCRIPT_SHA=$(sha256sum "$THRONE_DIR/script/build_android.sh" | cut -d' ' -f1)"
         } >> "$GITHUB_ENV"
     - name: ThroneCore cache
@@ -31,7 +38,7 @@ runs:
         path: |
           app/libs/ThroneCore.aar
           app/src/main/assets/schema/sing-box.json
-        key: throne-core-${{ env.THRONE_CORE_REF }}-${{ env.THRONE_CORE_SHA }}-${{ env.THRONE_CORE_SCRIPT_SHA }}-${{ hashFiles('.github/actions/throne-core/action.yml') }}
+        key: throne-core-${{ env.THRONE_CORE_SHA }}-${{ env.THRONE_CORE_SCRIPT_SHA }}-${{ hashFiles('buildScript/patches/*.patch') }}-${{ hashFiles('.github/actions/throne-core/action.yml') }}
     - name: Install Golang
       if: steps.cache.outputs.cache-hit != 'true'
       uses: actions/setup-go@v7

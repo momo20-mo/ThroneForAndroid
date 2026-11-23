@@ -46,15 +46,21 @@
 - **THEN** 本地只运行可用的静态检查
 - **AND** 最终编译交由 GitHub Actions，运行时行为交由真机验证
 
-### Requirement: 核心由 CI 按 THRONE_CORE_REF 构建并缓存
+### Requirement: GitHub Actions 始终使用最新 Throne 核心
 
-throne 核心 MUST 以 `nb4a.properties` 的 `THRONE_CORE_REF` 为唯一真实来源。CI MUST 从该 ref 检出 `throneproj/Throne` 构建 `ThroneCore.aar` 并生成 Android 构建标签一致的 sing-box 选项 schema，两者 MUST 以解析后的核心 commit 与核心构建脚本哈希为缓存键。核心 ref 或构建脚本变化 MUST 使缓存失效。
+GitHub Actions 每次运行核心构建时 MUST 解析 `throneproj/Throne` 默认分支的最新 commit 并检出该 commit，不得使用仓库中固定的旧 commit。解析出的 commit SHA MUST 写入本次构建的 `nb4a.properties`，用于应用版本元数据。Action MUST 在临时 checkout 上应用本仓库维护的 Android-only 补丁后构建 `ThroneCore.aar`，并以相同的有效 Android build tags 生成 sing-box 选项 schema。补丁 MUST 存放在本仓库，不能直接修改外部仓库；AAR 与 schema MUST 以解析后的核心 commit、补丁后的核心构建脚本哈希、补丁哈希及本地 action 哈希为缓存键。
 
-#### Scenario: 升级核心 ref
+#### Scenario: Action 构建跟随上游最新核心
 
-- **WHEN** 维护者修改 `nb4a.properties` 的 `THRONE_CORE_REF` 并触发构建
-- **THEN** CI 检出并构建对应核心 commit，重新生成 AAR 与 schema
-- **AND** 旧缓存不再被复用
+- **WHEN** GitHub Action 被触发
+- **THEN** Action 解析并构建当时 `throneproj/Throne` 默认分支的最新 commit
+- **AND** 该 commit SHA 写入应用元数据，且不同 commit 不会复用彼此的核心缓存
+
+#### Scenario: 启用 Android Tailscale endpoint
+
+- **WHEN** Android 核心构建需启用 sing-box 的 `with_tailscale` build tag
+- **THEN** CI 与 F-Droid 预构建在临时 Throne checkout 上应用本仓库的 Android-only 补丁
+- **AND** AAR 与 schema 均使用补丁后的 `script/build_android.sh` 标签
 
 ### Requirement: 外部仓库由用户提供明确路径
 
