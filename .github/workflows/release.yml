@@ -23,20 +23,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-      # The tag is v<VERSION_NAME>; a published release never reuses an existing tag.
+      # The tag is v<VERSION_NAME>; publishing again updates the existing Release without moving its tag.
       - name: Version
         id: version
-        env:
-          PUBLISH: ${{ inputs.publish }}
         run: |
           set -euo pipefail
           VERSION_NAME=$(sed -n 's/^VERSION_NAME=//p' nb4a.properties | tr -d '\r[:space:]')
           test -n "$VERSION_NAME"
           TAG="v$VERSION_NAME"
-          if [ "$PUBLISH" = "true" ] && git ls-remote --exit-code --tags origin "refs/tags/$TAG" > /dev/null; then
-            echo "::error::$TAG already exists: raise VERSION_NAME in nb4a.properties for a new release"
-            exit 1
-          fi
           echo "version=$VERSION_NAME" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
       # The release notes are the version's CHANGELOG.md section; a missing one fails before the build.
@@ -72,4 +66,24 @@ jobs:
         run: |
           set -euo pipefail
           bash buildScript/release_notes.sh "$VERSION_NAME" > "$RUNNER_TEMP/release.md"
-          gh release create "$TAG" dist/* --target "$GITHUB_SHA" --title "$TAG" --notes-file "$RUNNER_TEMP/release.md"
+          gh release list --limit 1000 --json tagName --jq '.[].tagName' > "$RUNNER_TEMP/release-tags.txt"
+          if grep -Fqx -- "$TAG" "$RUNNER_TEMP/release-tags.txt"; then
+            DIST_FILES=(dist/*)
+            DIST_NAMES=()
+            for file in "${DIST_FILES[@]}"; do DIST_NAMES+=("${file##*/}"); done
+
+            gh release upload "$TAG" "${DIST_FILES[@]}" --clobber
+            gh release view "$TAG" --json assets --jq '.assets[].name' > "$RUNNER_TEMP/release-assets.txt"
+            mapfile -t RELEASE_ASSETS < "$RUNNER_TEMP/release-assets.txt"
+            for asset in "${RELEASE_ASSETS[@]}"; do
+              keep=false
+              for name in "${DIST_NAMES[@]}"; do
+                if [[ "$asset" == "$name" ]]; then keep=true; break; fi
+              done
+              if [[ "$keep" == false ]]; then gh release delete-asset "$TAG" "$asset" --yes; fi
+            done
+            gh release edit "$TAG" --title "$TAG" --notes-file "$RUNNER_TEMP/release.md"
+            echo "Updated existing release $TAG; its Git tag was left unchanged."
+          else
+            gh release create "$TAG" dist/* --target "$GITHUB_SHA" --title "$TAG" --notes-file "$RUNNER_TEMP/release.md"
+          fi
