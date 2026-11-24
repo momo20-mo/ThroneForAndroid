@@ -8,6 +8,7 @@ import io.nekohasekai.sagernet.outbound.json.JsonArray
 import io.nekohasekai.sagernet.outbound.json.JsonObject
 import io.nekohasekai.sagernet.outbound.json.jsonObjectOf
 import io.nekohasekai.sagernet.outbound.types.AutoSelector
+import io.nekohasekai.sagernet.outbound.types.Custom
 import io.nekohasekai.sagernet.outbound.types.Socks
 
 /** ChainBuildRequest (generate.cpp:1413-1428). */
@@ -338,6 +339,7 @@ internal class ChainBuilder(
                 "destOverride" to JsonArray.of("http", "tls", "quic"),
                 "routeOnly" to false,
             )
+            Custom.routeXrayListenerRulesViaBridge(userXrayConfig)
             val inbounds = JsonArray()
             inbounds.add(bridgeInbound)
             if (!state.forTest && !req.soleXrayInbound) for (item in userXrayConfig.array("inbounds")) inbounds.add(item)
