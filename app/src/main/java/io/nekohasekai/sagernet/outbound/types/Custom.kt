@@ -1,6 +1,7 @@
 package io.nekohasekai.sagernet.outbound.types
 
 import io.nekohasekai.sagernet.R
+import io.nekohasekai.sagernet.database.DataStore
 import io.nekohasekai.sagernet.outbound.BuildContext
 import io.nekohasekai.sagernet.outbound.BuildResult
 import io.nekohasekai.sagernet.outbound.Outbound
@@ -224,7 +225,14 @@ class Custom : Outbound("custom") {
         }
         // dummy outbound so sing-box CheckConfig passes; the real one is in buildXray()
         if (subtype == CUSTOM_XRAY_OUTBOUND) return BuildResult(jsonObjectOf("type" to "socks", "server" to "127.0.0.1"))
-        return BuildResult(configObject())
+        val singBoxConfig = configObject()
+        if (subtype == CUSTOM_OUTBOUND &&
+            singBoxConfig.string("type") == "tailscale" &&
+            singBoxConfig.string("hostname").isBlank()
+        ) {
+            singBoxConfig["hostname"] = DataStore.effectiveDeviceName()
+        }
+        return BuildResult(singBoxConfig)
     }
 
     /** custom.h:148-155: domain resolution is wired on at instance creation, not as sockopt.domainStrategy. */

@@ -16,7 +16,6 @@ object SchemaStore {
 
     // The core's stub files register these without the build tags, but the Android core cannot run them.
     private val UNSUPPORTED = mapOf(
-        "Endpoint" to setOf("tailscale"),
         "DNSServer" to setOf("dhcp", "tailscale"),
         "Service" to setOf("derp"),
     )
