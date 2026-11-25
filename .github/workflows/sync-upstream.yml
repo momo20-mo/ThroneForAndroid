@@ -1,0 +1,93 @@
+name: Sync Upstream
+on:
+  schedule:
+    # Run daily at 02:00 UTC (10:00 UTC+8)
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+permissions:
+  contents: write
+  actions: write
+jobs:
+  sync:
+    name: Check and sync upstream tag
+    runs-on: ubuntu-latest
+    env:
+      UPSTREAM_URL: https://github.com/throneproj/ThroneForAndroid.git
+      SYNC_GH_TOKEN: ${{ secrets.SYNC_TOKEN || github.token }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - name: Check upstream and local tags
+        id: check
+        run: |
+          set -euo pipefail
+          UPSTREAM_TAG=$(git ls-remote --tags --refs "$UPSTREAM_URL" | awk -F/ '{print $NF}' | grep -E '^v[0-9]+(\.[0-9]+)+$' | sort -V | tail -n 1 || true)
+          if [ -z "$UPSTREAM_TAG" ]; then
+            echo "::error::Failed to resolve any stable tag from $UPSTREAM_URL"
+            exit 1
+          fi
+
+          ORIGIN_URL="https://x-access-token:${SYNC_GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          LOCAL_TAG=$(git ls-remote --tags --refs "$ORIGIN_URL" | awk -F/ '{print $NF}' | grep -E '^v[0-9]+(\.[0-9]+)+$' | sort -V | tail -n 1 || true)
+
+          echo "Upstream latest tag: $UPSTREAM_TAG"
+          echo "Local latest tag: ${LOCAL_TAG:-none}"
+
+          if [ "$UPSTREAM_TAG" = "$LOCAL_TAG" ]; then
+            echo "sync=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Already in sync with upstream tag $UPSTREAM_TAG"
+          else
+            echo "sync=true" >> "$GITHUB_OUTPUT"
+            echo "upstream_tag=$UPSTREAM_TAG" >> "$GITHUB_OUTPUT"
+            echo "local_tag=${LOCAL_TAG:-none}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Merge upstream tag and push
+        if: steps.check.outputs.sync == 'true'
+        env:
+          UPSTREAM_TAG: ${{ steps.check.outputs.upstream_tag }}
+        run: |
+          set -euo pipefail
+          BEFORE_SHA=$(git rev-parse HEAD)
+          ORIGIN_URL="https://x-access-token:${SYNC_GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git fetch --no-tags "$UPSTREAM_URL" "refs/tags/${UPSTREAM_TAG}"
+          if git merge-base --is-ancestor FETCH_HEAD HEAD; then
+            echo "Upstream tag $UPSTREAM_TAG is already merged into main; no new merge commit needed."
+          else
+            if ! git merge --no-edit -m "Merge upstream tag ${UPSTREAM_TAG} from throneproj/ThroneForAndroid" FETCH_HEAD; then
+              git merge --abort || true
+              echo "::error::Merge conflict while syncing upstream tag ${UPSTREAM_TAG}; manual resolution required."
+              exit 1
+            fi
+
+            if ! git push "$ORIGIN_URL" HEAD:main; then
+              if git diff --name-only "$BEFORE_SHA..HEAD" -- .github/workflows/ | grep -q .; then
+                echo "::error::Push rejected because upstream modified .github/workflows/. Add a PAT with 'repo' and 'workflow' scopes as repository secret SYNC_TOKEN, or merge manually."
+              fi
+              exit 1
+            fi
+          fi
+
+      - name: Trigger Release workflow
+        if: steps.check.outputs.sync == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.SYNC_TOKEN || github.token }}
+          GH_REPO: ${{ github.repository }}
+          UPSTREAM_TAG: ${{ steps.check.outputs.upstream_tag }}
+        run: |
+          set -euo pipefail
+          gh workflow run release.yml --ref main -f publish=true
+          echo "Triggered release.yml on main for upstream tag $UPSTREAM_TAG."

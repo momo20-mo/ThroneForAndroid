@@ -83,12 +83,22 @@ GitHub Actions 每次运行核心构建时 MUST 解析 `throneproj/Throne` 默�
 
 ### Requirement: 发布与预览工作流分离
 
-GitHub Actions MUST 通过 `release.yml` 与 `preview.yml` 分离正式发布与预览构建。正式发布 MUST 仅允许手动触发，MUST 从 `nb4a.properties` 的 `VERSION_NAME` 派生 tag `v${VERSION_NAME}`。当同名 Release 已存在时，工作流 MUST 更新其说明和附件，替换同名附件并清除本次产物中不存在的旧附件；当 Release 不存在时 MUST 创建。重复发布 MUST NOT 移动或删除既有 Git tag。发布入口 MUST 支持仅产出 workflow artifact 不创建 Release 的模式。预览 MUST 在推送到主分支时自动构建，版本号 MUST 为 `v${VERSION_NAME}-pre.${N}`（N 为自最近一个正式 tag 起的提交数，上限 998，保证预览排序低于对应正式版），HEAD 恰为正式 tag 时 MUST 跳过预览，且 MUST 以 pre-release 形式发布。
+GitHub Actions MUST 通过 `release.yml` 与 `preview.yml` 分离正式发布与预览构建，并通过 `sync-upstream.yml` 提供每日上游标签自动同步与发布触发。正式发布 MUST 仅支持 `workflow_dispatch`（由维护者手动触发或由 `sync-upstream.yml` 在同步上游新 tag 后自动调度），MUST 从 `nb4a.properties` 的 `VERSION_NAME` 派生 tag `v${VERSION_NAME}`。当同名 Release 已存在时，工作流 MUST 更新其说明和附件，替换同名附件并清除本次产物中不存在的旧附件；当 Release 不存在时 MUST 创建。重复发布 MUST NOT 移动或删除既有 Git tag。发布入口 MUST 支持仅产出 workflow artifact 不创建 Release 的模式。预览 MUST 在推送到主分支时自动构建，版本号 MUST 为 `v${VERSION_NAME}-pre.${N}`（N 为自最近一个正式 tag 起的提交数，上限 998，保证预览排序低于对应正式版），HEAD 恰为正式 tag 时 MUST 跳过预览，且 MUST 以 pre-release 形式发布。`sync-upstream.yml` MUST 每日定时（及支持手动）对比上游 `throneproj/ThroneForAndroid` 与本仓库的最新正式 tag；若一致则跳过，若不一致则将上游对应 tag 合并同步至 `main`（不覆盖本地 tag）并触发 `release.yml` 发布。
 
 #### Scenario: 手动发布正式版本
 
 - **WHEN** 维护者手动运行 Release 工作流且允许发布
 - **THEN** 工作流构建签名 APK，并创建或更新 `v${VERSION_NAME}` 的 GitHub Release 及其附件
+
+#### Scenario: 上游发布新正式 tag 时自动同步并发布
+
+- **WHEN** `sync-upstream.yml` 每日检查或被手动触发，且上游 `throneproj/ThroneForAndroid` 最新正式 tag 与本仓库不同
+- **THEN** 工作流将上游新 tag 的提交合并到 `main` 并推送，随后触发 `release.yml` 执行构建与发布
+
+#### Scenario: 上游 tag 与本地一致时跳过同步
+
+- **WHEN** `sync-upstream.yml` 检查发现上游最新正式 tag 与本仓库最新正式 tag 一致
+- **THEN** 工作流不产生合并提交且不触发 `release.yml`
 
 #### Scenario: 重复版本覆盖 Release
 

@@ -20,6 +20,23 @@ Throne for Android manages proxy profiles and subscriptions, routes traffic with
   <img width="300" alt="Throne for Android main screen" src=".github/images/screenshot.png" />
 </p>
 
+## 与上游分支的差异（Fork Differences）
+
+本分支基于上游 [throneproj/ThroneForAndroid](https://github.com/throneproj/ThroneForAndroid) 维护，主要差异如下：
+
+1. **启用 Tailscale 支持**
+   - 构建 `ThroneCore.aar` 与生成 `sing-box.json` schema 时应用 [buildScript/patches/throne-android-with-tailscale.patch](buildScript/patches/throne-android-with-tailscale.patch)，加入 `with_tailscale` Go build tag（涵盖 GitHub Actions 与 [buildScript/fdroid/prebuild.sh](buildScript/fdroid/prebuild.sh)）。
+   - 在 [SchemaStore.kt](app/src/main/java/io/nekohasekai/sagernet/ui/json/engine/SchemaStore.kt) 中解除对 `Endpoint` 下 `tailscale` 的不支持限制。
+   - 在 [Custom.kt](app/src/main/java/io/nekohasekai/sagernet/outbound/types/Custom.kt) 中为 `tailscale` 类型出站提供默认设备主机名（未填写 `hostname` 时自动回退为 `DataStore.effectiveDeviceName()`）。
+
+2. **始终使用最新 Throne 核心构建**
+   - [.github/actions/throne-core/action.yml](.github/actions/throne-core/action.yml) 在 GitHub Actions 构建时会动态解析并检出 [throneproj/Throne](https://github.com/throneproj/Throne) 默认分支的最新 commit（不固定使用 `nb4a.properties` 中的旧 commit），并将实际构建的核心 SHA 写入当次构建的 `nb4a.properties`。
+
+3. **自动化同步、发布与 CI 调整**
+   - **每日上游同步与自动发布**：新增 [.github/workflows/sync-upstream.yml](.github/workflows/sync-upstream.yml)，每天定时检查上游最新正式 tag；若与本仓库最新正式 tag 不一致，自动将上游 tag 合并至 `main` 并触发 [.github/workflows/release.yml](.github/workflows/release.yml) 构建发布。
+   - **Release 更新支持**：[.github/workflows/release.yml](.github/workflows/release.yml) 支持在目标 tag 的 Release 已存在时更新其说明和附件（保留既有 Git tag 不变）。
+   - **CI 触发调整**：[.github/workflows/ci.yml](.github/workflows/ci.yml) 将 `push.branches` 设为 `-*`，避免普通分支推送重复触发 CI。
+
 ## Installation
 
 APKs for arm64-v8a, armeabi-v7a and x86_64 are on [GitHub Releases](https://github.com/throneproj/ThroneForAndroid/releases), with a `SHA256SUMS` file to verify them. Throne runs on Android 7.0 (API 24) or newer, including Android TV.
