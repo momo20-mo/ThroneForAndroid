@@ -31,6 +31,7 @@ import io.nekohasekai.sagernet.ktx.Logs
 import io.nekohasekai.sagernet.ktx.broadcastReceiver
 import io.nekohasekai.sagernet.ktx.isOss
 import io.nekohasekai.sagernet.ktx.runOnDefaultDispatcher
+import io.nekohasekai.sagernet.scan.ScannerStartup
 import io.nekohasekai.sagernet.ui.MainActivity
 import io.nekohasekai.sagernet.update.UpdateManager
 import io.nekohasekai.sagernet.utils.*
@@ -98,7 +99,7 @@ class SagerNet : Application(),
                 IntentFilter(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED),
                 ContextCompat.RECEIVER_NOT_EXPORTED,
             )
-            AppLocale.apply()
+            AppLocale.applyStored()
             UpdateManager.onAppStart(this)
             runOnDefaultDispatcher {
                 DefaultNetworkListener.start(this) {
@@ -111,6 +112,7 @@ class SagerNet : Application(),
             runOnDefaultDispatcher { File(filesDir, "custom_icon").deleteRecursively() }
             RemoteRouteUpdater.schedule()
             SubscriptionScheduler.schedule()
+            ScannerStartup.start()
             Widgets.watchSelection(this)
         }
 
@@ -134,11 +136,10 @@ class SagerNet : Application(),
 
     // Enqueueing (RemoteWorkManagerService) and SystemJobService live in the main process, so the reschedule after a
     // reboot, force-stop or update (ForceStopRunnable, default process only) must run there too; workers hop to :bg.
-    override fun getWorkManagerConfiguration(): WorkConfiguration {
-        return WorkConfiguration.Builder()
+    override val workManagerConfiguration: WorkConfiguration
+        get() = WorkConfiguration.Builder()
             .setDefaultProcessName(BuildConfig.APPLICATION_ID)
             .build()
-    }
 
     @SuppressLint("InlinedApi")
     companion object {
